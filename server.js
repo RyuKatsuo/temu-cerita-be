@@ -1,5 +1,9 @@
 const Hapi = require('@hapi/hapi');
-const userRoutes = require('./routes/users');
+const Jwt = require('@hapi/jwt');
+
+const authRoutes = require('./routes/auth');
+const articleRoute = require('./routes/articles');
+const authMiddleware = require('./middleware/authMiddleware')
 const sequelize = require('./models/index');
 require('dotenv').config();
 
@@ -10,10 +14,16 @@ const init = async () => {
     host: process.env.HOST
   });
 
-  server.route(userRoutes);
+  await server.register(Jwt);
+  server.auth.strategy('jwt','jwt',authMiddleware);
+  server.auth.default('jwt');
+
+  server.route(authRoutes);
+  server.route(articleRoute);
 
   // Sync DB
   await sequelize.sync(); 
+
 
   await server.start();
   console.log('Server running on %s', server.info.uri);
