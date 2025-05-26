@@ -1,10 +1,10 @@
 const Hapi = require('@hapi/hapi');
 const Jwt = require('@hapi/jwt');
 
-const authRoutes = require('./routes/auth');
-const articleRoute = require('./routes/articles');
-const authMiddleware = require('./middleware/authMiddleware')
-const sequelize = require('./models/index');
+const authRoutes = require('./src/routes/auth');
+const articleRoute = require('./src/routes/articles');
+const authMiddleware = require('./src/middleware/authMiddleware')
+const sequelize = require('./src/models/index');
 require('dotenv').config();
 
 
