@@ -161,6 +161,9 @@ const getAllArticleHandler = async (request, h) => {
   try {
     const { title, category } = request.query;
 
+    console.log(category, '16444');
+    
+
     const whereClause = {};
     if (title) {
       whereClause.title = { [Op.iLike]: `%${title}%` };
@@ -182,6 +185,7 @@ const getAllArticleHandler = async (request, h) => {
         {
           model: ArticleCategoryMap,
           as: 'category_maps',
+          required: category ? true : false,
           include: [
             {
               model: Category,
@@ -194,6 +198,7 @@ const getAllArticleHandler = async (request, h) => {
                     },
                   }
                 : undefined,
+                required: true,
             },
           ],
         },
@@ -221,6 +226,7 @@ const getAllArticleHandler = async (request, h) => {
         ],
       },
       order: [['created_at', 'DESC']],
+      logging: console.log,
     });
 
     return h
