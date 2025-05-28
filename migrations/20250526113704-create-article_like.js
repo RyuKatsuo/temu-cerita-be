@@ -3,24 +3,11 @@
 /** @type {import('sequelize-cli').Migration} */
 module.exports = {
   async up (queryInterface, Sequelize) {
-    await queryInterface.createTable('Articles', {
+    await queryInterface.createTable('Article_likes', {
       id: {
         type: Sequelize.UUID,
         defaultValue: Sequelize.UUIDV4,
         primaryKey: true,
-      },
-      title: Sequelize.STRING,
-      slug: {
-        type: Sequelize.STRING,
-        unique: true,
-      },
-      thumbnail_url: Sequelize.STRING,
-      content_html: Sequelize.TEXT,
-      province: Sequelize.STRING,
-      city: Sequelize.STRING,
-      active: {
-        type: Sequelize.BOOLEAN,
-        defaultValue: true,
       },
       created_at: Sequelize.DATE,
       updated_at: Sequelize.DATE,
@@ -31,12 +18,21 @@ module.exports = {
           key: 'id',
         },
         onUpdate: 'CASCADE',
-        onDelete: 'SET NULL',
+        onDelete: 'CASCADE',
+      },
+      article_id: {
+        type: Sequelize.UUID,
+        references: {
+          model: 'Articles',
+          key: 'id',
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE',
       },
     });
   },
 
   async down (queryInterface, Sequelize) {
-    await queryInterface.dropTable('Articles');
+    await queryInterface.dropTable('Article_likes');
   }
 };

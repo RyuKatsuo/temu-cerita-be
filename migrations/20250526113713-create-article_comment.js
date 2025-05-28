@@ -11,6 +11,7 @@ module.exports = {
       },
       comment: Sequelize.STRING,
       created_at: Sequelize.DATE,
+      updated_at: Sequelize.DATE,
       parent_comment_id: {
         type: Sequelize.UUID,
         allowNull: true,

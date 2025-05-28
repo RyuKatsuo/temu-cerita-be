@@ -11,6 +11,7 @@ module.exports = {
       },
       category: Sequelize.STRING,
       created_at: Sequelize.DATE,
+      updated_at: Sequelize.DATE,
     });
   },
 

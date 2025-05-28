@@ -10,7 +10,11 @@ const registerHandler = async (request, h) => {
 
   const existingUser = await User.findOne({ where: { email } });
   if (existingUser) {
-    return h.response({ message: "Email already registered" }).code(409);
+    return h.response({
+      statusCode: '409',
+      status: 'fail',
+      message: "Email already registered" 
+    }).code(409);
   }
 
   // Hash password
@@ -33,11 +37,14 @@ const registerHandler = async (request, h) => {
     process.env.JWT_SECRET,
     { expiresIn: "1d" }
   );
+  
 
   return h
     .response({
+      statusCode: '201',
+      status: 'success',
       message: "User registered successfully",
-      token,
+      token : token,
     })
     .code(201);
 };
@@ -49,14 +56,22 @@ const loginHandler = async (request, h) => {
   const user = await User.findOne({ where: { email } });
   if (!user || !user.active) {
     return h
-      .response({ message: "Invalid email or account inactive" })
+      .response({
+        statusCode: '401',
+        status: 'fail', 
+        message: "Invalid email or account inactive" 
+      })
       .code(401);
   }
 
   // Cek password
   const validPassword = await bcrypt.compare(password, user.password);
   if (!validPassword) {
-    return h.response({ message: "Incorrect password" }).code(401);
+    return h.response({ 
+      statusCode: '401',
+      status: 'fail', 
+      message: "Incorrect password" 
+    }).code(401);
   }
 
   // Buat token
@@ -72,8 +87,10 @@ const loginHandler = async (request, h) => {
 
   return h
     .response({
+      statusCode: '200',
+      status: 'success', 
       message: "Login successful",
-      token,
+      token: token,
     })
     .code(200);
 };

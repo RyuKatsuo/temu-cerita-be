@@ -11,6 +11,7 @@ module.exports = {
       },
       image_url: Sequelize.STRING,
       created_at: Sequelize.DATE,
+      updated_at: Sequelize.DATE,
       article_id: {
         type: Sequelize.UUID,
         references: {
