@@ -10,6 +10,7 @@ const {
   ArticleCategoryMap,
   Category,
   ArticleSaved,
+  User,
 } = require("../models/relation");
 // const sequelize = require("../models/index");
 const { Op, Sequelize } = require("sequelize");
@@ -161,86 +162,77 @@ const createArticleHandler = async (request, h) => {
   });
 };
 
+const getCalculatedArticleAttributes = (userId) => {
+  const attributes = [
+    [
+      Sequelize.literal(`(
+        SELECT COUNT(*) FROM "Article_likes" AS likes WHERE likes.article_id = "Articles"."id"
+      )`),
+      "total_likes",
+    ],
+    [
+      Sequelize.literal(`(
+        SELECT COUNT(*) FROM "Article_comments" AS comments WHERE comments.article_id = "Articles"."id"
+      )`),
+      "total_comments",
+    ],
+    [
+      Sequelize.literal(`(
+        SELECT name FROM "Users" WHERE "Articles".user_id = "Users"."id"
+      )`),
+      "authorName",
+    ],
+  ];
+
+  if (userId) {
+    attributes.push([
+      Sequelize.literal(`(
+          EXISTS (
+              SELECT 1 FROM "Article_likes" AS "user_like"
+              WHERE "user_like"."article_id" = "Articles"."id"
+              AND "user_like"."user_id" = '${userId}'
+          )
+      )`),
+      'isLikedByUser',
+    ]);
+    attributes.push([
+      Sequelize.literal(`(
+          EXISTS (
+              SELECT 1 FROM "Article_saved" AS "user_save"
+              WHERE "user_save"."article_id" = "Articles"."id"
+              AND "user_save"."user_id" = '${userId}'
+          )
+      )`),
+      'isSavedByUser',
+    ]);
+  } else {
+    attributes.push([Sequelize.literal('false'), 'isLikedByUser']);
+    attributes.push([Sequelize.literal('false'), 'isSavedByUser']);
+  }
+  return attributes;
+};
+
 const getAllArticleHandler = async (request, h) => {
   try {
     const { title, category: categoryQuery } = request.query;
-    // 1. Dapatkan ID pengguna jika terotentikasi
-    const userId = request.auth.credentials.id;
+    const userId = request.auth.isAuthenticated
+      ? request.auth.credentials.id
+      : null;
 
-    const whereClause = {};
+    const whereClause = {
+      active: true,
+    };
     if (title) {
       whereClause.title = { [Op.iLike]: `%${title}%` };
     }
 
-    const attributesInclude = [
-      [
-        // Total Likes
-        Sequelize.literal(`(
-          SELECT COUNT(*) FROM "Article_likes" AS likes WHERE likes.article_id = "Articles"."id"
-        )`),
-        "total_likes",
-      ],
-      [
-        // Total Comments
-        Sequelize.literal(`(
-          SELECT COUNT(*) FROM "Article_comments" AS comments WHERE comments.article_id = "Articles"."id"
-        )`),
-        "total_comments",
-      ],
-      [
-        // Author Name
-        Sequelize.literal(`(
-          SELECT name FROM "Users" WHERE "Articles".user_id = "Users"."id"
-        )`),
-        "author",
-      ],
-    ];
-
-    if (userId) {
-      attributesInclude.push([
-        Sequelize.literal(`(
-            EXISTS (
-                SELECT 1 FROM "Article_likes" AS "user_like"
-                WHERE "user_like"."article_id" = "Articles"."id"
-                AND "user_like"."user_id" = '${userId}'
-            )
-        )`),
-        "isLikedByUser",
-      ]);
-      attributesInclude.push([
-        Sequelize.literal(`(
-            EXISTS (
-                SELECT 1 FROM "Article_saved" AS "user_save"
-                WHERE "user_save"."article_id" = "Articles"."id"
-                AND "user_save"."user_id" = '${userId}'
-            )
-        )`),
-        "isSavedByUser",
-      ]);
-    } else {
-      attributesInclude.push([
-        Sequelize.literal("false"), // Langsung set false
-        "isLikedByUser",
-      ]);
-      attributesInclude.push([
-        Sequelize.literal("false"), // Langsung set false
-        "isSavedByUser",
-      ]);
-    }
+    const calculatedAttributes = getCalculatedArticleAttributes(userId);
 
     const articles = await Article.findAll({
       where: whereClause,
       include: [
-        {
-          model: ArticleLikes,
-          as: "likes",
-          attributes: [],
-        },
-        {
-          model: ArticleComments,
-          as: "comments",
-          attributes: [],
-        },
+        { model: ArticleLikes, as: "likes", attributes: [] },
+        { model: ArticleComments, as: "comments", attributes: [] },
         {
           model: ArticleCategoryMap,
           as: "category_maps",
@@ -251,11 +243,7 @@ const getAllArticleHandler = async (request, h) => {
               as: "category",
               attributes: ["id", "category"],
               where: categoryQuery
-                ? {
-                    category: {
-                      [Op.iLike]: `%${categoryQuery}%`,
-                    },
-                  }
+                ? { category: { [Op.iLike]: `%${categoryQuery}%` } }
                 : undefined,
               required: !!categoryQuery,
             },
@@ -263,13 +251,12 @@ const getAllArticleHandler = async (request, h) => {
         },
       ],
       attributes: {
-        include: attributesInclude, // Gunakan array atribut yang sudah dibangun
+        include: calculatedAttributes,
       },
       order: [["created_at", "DESC"]],
       distinct: true,
-      // logging: console.log,
     });
-
+    
     return h
       .response({
         statusCode: 200,
@@ -286,6 +273,75 @@ const getAllArticleHandler = async (request, h) => {
         message: "Internal Server Error",
       })
       .code(500);
+  }
+};
+
+const getArticleBySlug = async (request, h) => {
+  try {
+    const { slug } = request.params;
+    const userId = request.auth.isAuthenticated ? request.auth.credentials.id : null;
+
+    console.log(`[getArticleBySlug] Mencari artikel dengan slug: ${slug}, untuk userId: ${userId}`);
+
+    const calculatedAttributes = getCalculatedArticleAttributes(userId);
+
+    const article = await Article.findOne({
+      where: { slug },
+      include: [
+        {
+          model: ArticleCategoryMap,
+          as: "category_maps",
+          attributes: ['id'],
+          include: [
+            {
+              model: Category,
+              as: "category",
+              attributes: ["id", "category"], 
+            },
+          ],
+          required: false,
+        },
+        {
+          model: User,
+          as: 'author', 
+          attributes: ['id', 'name', 'email'],
+        }
+      ],
+      attributes: {
+        include: calculatedAttributes,
+      },
+    });
+
+    console.log(`[getArticleBySlug] Hasil findOne untuk slug '${slug}':`, article ? 'Ditemukan' : 'Tidak Ditemukan (null)');
+    if (!article) {
+      return h.response({
+        statusCode: 404,
+        status: "fail",
+        message: "Article not found",
+      }).code(404);
+    }
+
+    if (!article.active && article.user_id !== userId) {
+      console.log(`[getArticleBySlug] Artikel '${slug}' tidak aktif dan user '${userId}' bukan pemilik.`);
+      return h.response({
+        statusCode: 404,
+        status: "fail",
+        message: "Article not found or you do not have permission to view it.",
+      }).code(404);
+    }
+
+    return h.response({
+      statusCode: 200,
+      status: "success",
+      data: article,
+    }).code(200);
+  } catch (error) {
+    console.error("Error in getArticleBySlug:", error.name, error.message, error.stack); // Log error lebih detail
+    return h.response({
+      statusCode: 500,
+      status: "error",
+      message: "Internal Server Error",
+    }).code(500);
   }
 };
 
@@ -501,5 +557,6 @@ module.exports = {
   postLikeArticle,
   deleteLikeArticle,
   postSaveArticle,
-  deleteSaveArticle
+  deleteSaveArticle,
+  getArticleBySlug,
 };

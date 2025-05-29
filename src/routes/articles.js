@@ -7,6 +7,7 @@ const {
   deleteLikeArticle,
   postSaveArticle,
   deleteSaveArticle,
+  getArticleBySlug,
 } = require("../controllers/articleController");
 const Joi = require("joi");
 
@@ -40,6 +41,11 @@ const articleRoutes = [
         allow: "multipart/form-data",
       },
     },
+  },
+  {
+    method: "GET",
+    path: "/articles/{slug}",
+    handler: getArticleBySlug,
   },
   {
     method: "GET",
