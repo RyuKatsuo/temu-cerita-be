@@ -3,10 +3,16 @@ const path = require("path");
 const fs = require("fs");
 const Joi = require("joi");
 const { v4: uuidv4 } = require("uuid");
-const { Article, ArticleLikes, ArticleComments, ArticleCategoryMap, Category } = require("../models/relation");
-const sequelize = require('../models/index');
-const {Op} = require('sequelize');
-
+const {
+  Article,
+  ArticleLikes,
+  ArticleComments,
+  ArticleCategoryMap,
+  Category,
+  ArticleSaved,
+} = require("../models/relation");
+// const sequelize = require("../models/index");
+const { Op, Sequelize } = require("sequelize");
 
 const createArticleHandler = async (request, h) => {
   const articleSchema = Joi.object({
@@ -46,7 +52,7 @@ const createArticleHandler = async (request, h) => {
         active: fields.active?.[0],
         city: fields.city?.[0],
         thumbnail: files.thumbnail?.[0],
-        category: fields.category?.[0]
+        category: fields.category?.[0],
       });
 
       if (error) {
@@ -63,7 +69,8 @@ const createArticleHandler = async (request, h) => {
 
       try {
         const user_id = request.auth.credentials.id;
-        const { title, content_html, province,active, city, category } = fields;
+        const { title, content_html, province, active, city, category } =
+          fields;
         const file = files.thumbnail;
         // const receivedMimeType = file.mimetype.toLowerCase();
         // console.log(file[0].mimetype, "===> fileee");
@@ -93,18 +100,16 @@ const createArticleHandler = async (request, h) => {
         const slug = `${title[0]
           .toLowerCase()
           .replace(/\s+/g, "-")}-${uuid.slice(0, 5)}`;
-        
+
         console.log("97");
-        
 
         let existingCategory = await Category.findOne({
           where: { category: category[0].trim().toLowerCase() },
         });
 
         console.log("103");
-        console.log(existingCategory, "exisssss");
-        
-        
+        // console.log(existingCategory, "exisssss");
+
         if (!existingCategory) {
           existingCategory = await Category.create({
             id: uuidv4(),
@@ -156,17 +161,71 @@ const createArticleHandler = async (request, h) => {
   });
 };
 
-
 const getAllArticleHandler = async (request, h) => {
   try {
-    const { title, category } = request.query;
-
-    console.log(category, '16444');
-    
+    const { title, category: categoryQuery } = request.query;
+    // 1. Dapatkan ID pengguna jika terotentikasi
+    const userId = request.auth.credentials.id;
 
     const whereClause = {};
     if (title) {
       whereClause.title = { [Op.iLike]: `%${title}%` };
+    }
+
+    const attributesInclude = [
+      [
+        // Total Likes
+        Sequelize.literal(`(
+          SELECT COUNT(*) FROM "Article_likes" AS likes WHERE likes.article_id = "Articles"."id"
+        )`),
+        "total_likes",
+      ],
+      [
+        // Total Comments
+        Sequelize.literal(`(
+          SELECT COUNT(*) FROM "Article_comments" AS comments WHERE comments.article_id = "Articles"."id"
+        )`),
+        "total_comments",
+      ],
+      [
+        // Author Name
+        Sequelize.literal(`(
+          SELECT name FROM "Users" WHERE "Articles".user_id = "Users"."id"
+        )`),
+        "author",
+      ],
+    ];
+
+    if (userId) {
+      attributesInclude.push([
+        Sequelize.literal(`(
+            EXISTS (
+                SELECT 1 FROM "Article_likes" AS "user_like"
+                WHERE "user_like"."article_id" = "Articles"."id"
+                AND "user_like"."user_id" = '${userId}'
+            )
+        )`),
+        "isLikedByUser",
+      ]);
+      attributesInclude.push([
+        Sequelize.literal(`(
+            EXISTS (
+                SELECT 1 FROM "Article_saved" AS "user_save"
+                WHERE "user_save"."article_id" = "Articles"."id"
+                AND "user_save"."user_id" = '${userId}'
+            )
+        )`),
+        "isSavedByUser",
+      ]);
+    } else {
+      attributesInclude.push([
+        Sequelize.literal("false"), // Langsung set false
+        "isLikedByUser",
+      ]);
+      attributesInclude.push([
+        Sequelize.literal("false"), // Langsung set false
+        "isSavedByUser",
+      ]);
     }
 
     const articles = await Article.findAll({
@@ -174,75 +233,57 @@ const getAllArticleHandler = async (request, h) => {
       include: [
         {
           model: ArticleLikes,
-          as: 'likes',
+          as: "likes",
           attributes: [],
         },
         {
           model: ArticleComments,
-          as: 'comments',
+          as: "comments",
           attributes: [],
         },
         {
           model: ArticleCategoryMap,
-          as: 'category_maps',
-          required: category ? true : false,
+          as: "category_maps",
+          required: !!categoryQuery,
           include: [
             {
               model: Category,
-              as: 'category',
-              attributes: ['id', 'category'],
-              where: category
+              as: "category",
+              attributes: ["id", "category"],
+              where: categoryQuery
                 ? {
                     category: {
-                      [Op.iLike]: `%${category}%`,
+                      [Op.iLike]: `%${categoryQuery}%`,
                     },
                   }
                 : undefined,
-                required: true,
+              required: !!categoryQuery,
             },
           ],
         },
       ],
       attributes: {
-        include: [
-          [
-            sequelize.literal(`(
-              SELECT COUNT(*) FROM "Article_likes" AS likes WHERE likes.article_id = "Articles"."id"
-            )`),
-            'total_likes',
-          ],
-          [
-            sequelize.literal(`(
-              SELECT COUNT(*) FROM "Article_comments" AS comments WHERE comments.article_id = "Articles"."id"
-            )`),
-            'total_comments',
-          ],
-          [
-            sequelize.literal(`(
-              SELECT name FROM "Users" WHERE "Articles".user_id = "Users"."id"
-            )`),
-            'author',
-          ],
-        ],
+        include: attributesInclude, // Gunakan array atribut yang sudah dibangun
       },
-      order: [['created_at', 'DESC']],
-      logging: console.log,
+      order: [["created_at", "DESC"]],
+      distinct: true,
+      // logging: console.log,
     });
 
     return h
       .response({
         statusCode: 200,
-        status: 'success',
+        status: "success",
         data: articles,
       })
       .code(200);
   } catch (error) {
-    console.error(error);
+    console.error("Error in getAllArticleHandler:", error);
     return h
       .response({
         statusCode: 500,
-        status: 'error',
-        message: 'Internal Server Error',
+        status: "error",
+        message: "Internal Server Error",
       })
       .code(500);
   }
@@ -250,12 +291,215 @@ const getAllArticleHandler = async (request, h) => {
 
 const getAllCategories = async (request, h) => {
   const categories = await Category.findAll();
-  
-  return h.response({
-    statusCode: 200,
-    status: 'success',
-    data: categories
-  }).code(200);
-}
 
-module.exports = { createArticleHandler, getAllArticleHandler, getAllCategories };
+  return h
+    .response({
+      statusCode: 200,
+      status: "success",
+      data: categories,
+    })
+    .code(200);
+};
+
+const postLikeArticle = async (request, h) => {
+  try {
+    const { articleId } = request.params;
+    const article = await Article.findOne({ where: { id: articleId } });
+
+    if (!article || !article.active) {
+      return h
+        .response({
+          statusCode: 404,
+          status: "fail",
+          message: "Article not found",
+        })
+        .code(404);
+    }
+
+    const user = request.auth.credentials;
+
+    const articleLike = await ArticleLikes.create({
+      article_id: articleId,
+      user_id: user.id,
+    });
+
+    return h
+      .response({
+        statusCode: 201,
+        status: "success",
+        message: `Article liked by ${user.email}`,
+      })
+      .code(201);
+  } catch (err) {
+    console.error("ERROR LIKING ARTICLE:", err);
+    return h
+      .response({
+        statusCode: 500,
+        status: "error",
+        message: "Internal Server Error",
+      })
+      .code(500);
+  }
+};
+
+const deleteLikeArticle = async (request, h) => {
+  try {
+    const { articleId } = request.params;
+    console.log(articleId, "3100 articcc");
+    const article = await Article.findOne({ where: { id: articleId } });
+
+    if (!article || !article.active) {
+      return h
+        .response({
+          statusCode: 404,
+          status: "fail",
+          message: "Article not found",
+        })
+        .code(404);
+    }
+
+    const user = request.auth.credentials;
+    console.log(user.id, "ussserrrrrrr id");
+    console.log(user.email, "ussserrrrrrr id");
+
+    const articleLikeByUser = await ArticleLikes.findOne({
+      where: {
+        article_id: article.id,
+        user_id: user.id,
+      },
+    });
+
+    if (!articleLikeByUser) {
+      return h
+        .response({
+          statusCode: 404,
+          status: "fail",
+          message: "User has not liked this article.",
+        })
+        .code(404);
+    }
+
+    await articleLikeByUser.destroy();
+    return h
+      .response({
+        statusCode: 200,
+        status: "success",
+        message: "Success unliked the article",
+      })
+      .code(200);
+  } catch (err) {
+    console.error("ERROR UNLIKE ARTICLE:", err);
+    return h
+      .response({
+        statusCode: 500,
+        status: "error",
+        message: "Internal Server Error",
+      })
+      .code(500);
+  }
+};
+
+const postSaveArticle = async (request, h) => {
+  try {
+    const { articleId } = request.params;
+    const article = await Article.findOne({ where: { id: articleId } });
+
+    if (!article || !article.active) {
+      return h
+        .response({
+          statusCode: 404,
+          status: "fail",
+          message: "Article not found",
+        })
+        .code(404);
+    }
+
+    const user = request.auth.credentials;
+
+    const articleSave = await ArticleSaved.create({
+      article_id: articleId,
+      user_id: user.id,
+    });
+
+    return h
+      .response({
+        statusCode: 201,
+        status: "success",
+        message: `Article saved by ${user.email}`,
+      })
+      .code(201);
+  } catch (err) {
+    console.error("ERROR SAVED ARTICLE:", err);
+    return h
+      .response({
+        statusCode: 500,
+        status: "error",
+        message: "Internal Server Error",
+      })
+      .code(500);
+  }
+};
+
+const deleteSaveArticle = async (request, h) => {
+  try {
+    const { articleId } = request.params;
+    const article = await Article.findOne({ where: { id: articleId } });
+
+    if (!article || !article.active) {
+      return h
+        .response({
+          statusCode: 404,
+          status: "fail",
+          message: "Article not found",
+        })
+        .code(404);
+    }
+
+    const user = request.auth.credentials;
+
+    const articleSaveByUser = await ArticleSaved.findOne({
+      where: {
+        article_id: article.id,
+        user_id: user.id,
+      },
+    });
+
+    if (!articleSaveByUser) {
+      return h
+        .response({
+          statusCode: 404,
+          status: "fail",
+          message: "User has not saved this article.",
+        })
+        .code(404);
+    }
+
+    await articleSaveByUser.destroy();
+    return h
+      .response({
+        statusCode: 200,
+        status: "success",
+        message: "Success unsaved the article",
+      })
+      .code(200);
+  } catch (err) {
+    console.error("ERROR UNSAVE ARTICLE:", err);
+    return h
+      .response({
+        statusCode: 500,
+        status: "error",
+        message: "Internal Server Error",
+      })
+      .code(500);
+  }
+};
+
+module.exports = {
+  createArticleHandler,
+  getAllArticleHandler,
+  getAllCategories,
+  postLikeArticle,
+  deleteLikeArticle,
+  postSaveArticle,
+  deleteSaveArticle
+};

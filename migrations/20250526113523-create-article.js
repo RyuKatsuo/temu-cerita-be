@@ -40,7 +40,8 @@ module.exports = {
     await queryInterface.dropTable('article_category_map');
     await queryInterface.dropTable('Article_likes');
     await queryInterface.dropTable('Article_comments'); 
-    await queryInterface.dropTable('article_category');
+    await queryInterface.dropTable('Article_category');
+    await queryInterface.dropTable('Article_saved');
     await queryInterface.dropTable('Articles');
   }
 };

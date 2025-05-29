@@ -6,16 +6,17 @@ const { Category } = require('./category');
 const { ArticleCategoryMap } = require('./article_category_map');
 const { ArticleLikes } = require('./article_likes');
 const { ArticleComments } = require('./article_comments');
+const { ArticleSaved } = require('./article_saved');
 
 // Relasi User - Article
 User.hasMany(Article, { foreignKey: 'user_id', as: 'articles' });
 Article.belongsTo(User, { foreignKey: 'user_id', as: 'author' });
 
 // // Relasi Article - Article_saved
-// Article.hasMany(Article_saved, { foreignKey: 'article_id', as: 'saves' });
-// Article_saved.belongsTo(Article, { foreignKey: 'article_id' });
-// User.hasMany(Article_saved, { foreignKey: 'user_id', as: 'saved_articles' });
-// Article_saved.belongsTo(User, { foreignKey: 'user_id' });
+Article.hasMany(ArticleSaved, { foreignKey: 'article_id', as: 'saves' });
+ArticleSaved.belongsTo(Article, { foreignKey: 'article_id' });
+User.hasMany(ArticleSaved, { foreignKey: 'user_id', as: 'saved_articles' });
+ArticleSaved.belongsTo(User, { foreignKey: 'user_id' });
 
 // // Relasi Article - Article_image
 // Article.hasMany(Article_image, { foreignKey: 'article_id', as: 'images' });
@@ -54,7 +55,7 @@ ArticleComments.belongsTo(ArticleComments, {
 module.exports = {
   User,
   Article,
-//   Article_saved,
+  ArticleSaved,
 //   Article_image,
   Category,
   ArticleCategoryMap,

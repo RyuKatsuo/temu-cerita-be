@@ -1,5 +1,14 @@
 const { options } = require("joi");
-const { createArticleHandler, getAllArticleHandler, getAllCategories } = require("../controllers/articleController");
+const {
+  createArticleHandler,
+  getAllArticleHandler,
+  getAllCategories,
+  postLikeArticle,
+  deleteLikeArticle,
+  postSaveArticle,
+  deleteSaveArticle,
+} = require("../controllers/articleController");
+const Joi = require("joi");
 
 const articleRoutes = [
   {
@@ -36,6 +45,54 @@ const articleRoutes = [
     method: "GET",
     path: "/articles/add",
     handler: getAllCategories,
+  },
+  {
+    method: "POST",
+    path: "/article/{articleId}/like",
+    handler: postLikeArticle,
+    options: {
+      validate: {
+        params: Joi.object({
+          articleId: Joi.string().uuid().required(),
+        }),
+      },
+    },
+  },
+  {
+    method: "DELETE",
+    path: "/article/{articleId}/like",
+    handler: deleteLikeArticle,
+    options: {
+      validate: {
+        params: Joi.object({
+          articleId: Joi.string().uuid().required(),
+        }),
+      },
+    },
+  },
+  {
+    method: "POST",
+    path: "/article/{articleId}/save",
+    handler: postSaveArticle,
+    options: {
+      validate: {
+        params: Joi.object({
+          articleId: Joi.string().uuid().required(),
+        }),
+      },
+    },
+  },
+  {
+    method: "DELETE",
+    path: "/article/{articleId}/save",
+    handler: deleteSaveArticle,
+    options: {
+      validate: {
+        params: Joi.object({
+          articleId: Joi.string().uuid().required(),
+        }),
+      },
+    },
   },
 ];
 
