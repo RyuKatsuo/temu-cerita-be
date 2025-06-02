@@ -34,11 +34,24 @@ const articleRoutes = [
     path: "/articles",
     handler: createArticleHandler,
     options: {
-      payload: {
-        output: "stream",
-        parse: false,
-        maxBytes: 5 * 1024 * 1024, // 5MB
-        allow: "multipart/form-data",
+      validate: {
+        payload: Joi.object({
+          title: Joi.string().min(5).required(),
+          content_html: Joi.string().required(),
+          province: Joi.string().required(),
+          city: Joi.string().required(),
+          active: Joi.boolean().required(), // Atau .default(true) jika ingin opsional
+          category: Joi.string().required(),
+          images: Joi.array()
+            .items(Joi.string().uri())
+            .min(1)
+            .required()
+            .messages({
+              "array.min":
+                "At least one image URL is required in the images array.",
+              "string.uri": "Each item in images must be a valid URL.",
+            }),
+        }),
       },
     },
   },

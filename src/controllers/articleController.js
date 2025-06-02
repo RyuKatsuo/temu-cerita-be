@@ -11,155 +11,99 @@ const {
   Category,
   ArticleSaved,
   User,
+  ArticleImages
 } = require("../models/relation");
 // const sequelize = require("../models/index");
 const { Op, Sequelize } = require("sequelize");
+const sequelize = require('../models/index');
 
 const createArticleHandler = async (request, h) => {
-  const articleSchema = Joi.object({
-    title: Joi.string().min(5).required(),
-    content_html: Joi.string().required(),
-    province: Joi.string().required(),
-    city: Joi.string().required(),
-    active: Joi.boolean().required(),
-    thumbnail: Joi.required(),
-    category: Joi.string().required(),
-  });
 
-  const form = formidable({
-    multiples: false,
-    keepExtensions: true,
-    maxFileSize: 5 * 1024 * 1024, // 5MB
-  });
 
-  return new Promise((resolve, reject) => {
-    form.parse(request.raw.req, async (err, fields, files) => {
-      if (err) {
-        return resolve(
-          h
-            .response({
-              statusCode: 400,
-              status: "fail",
-              message: "Form parsing error",
-            })
-            .code(400)
-        );
-      }
+  // Mulai transaksi
+  const t = await sequelize.transaction();
 
-      const { error, value } = articleSchema.validate({
-        title: fields.title?.[0],
-        content_html: fields.content_html?.[0],
-        province: fields.province?.[0],
-        active: fields.active?.[0],
-        city: fields.city?.[0],
-        thumbnail: files.thumbnail?.[0],
-        category: fields.category?.[0],
-      });
+  try {
+    const user_id = request.auth.credentials.id; // Pastikan otentikasi sudah di-setup
+    const { title, content_html, province, active, city, category, images } = request.payload;
 
-      if (error) {
-        return resolve(
-          h
-            .response({
-              statusCode: 400,
-              status: "fail",
-              message: error.details[0].message,
-            })
-            .code(400)
-        );
-      }
-
-      try {
-        const user_id = request.auth.credentials.id;
-        const { title, content_html, province, active, city, category } =
-          fields;
-        const file = files.thumbnail;
-        // const receivedMimeType = file.mimetype.toLowerCase();
-        // console.log(file[0].mimetype, "===> fileee");
-
-        // Validasi file
-        const allowedTypes = ["image/jpeg", "image/png", "image/jpg"];
-        if (!allowedTypes.includes(file[0].mimetype)) {
-          return resolve(
-            h
-              .response({
-                statusCode: 415,
-                status: "fail",
-                message: "Only jpg, jpeg, and png files are allowed",
-              })
-              .code(415)
-          );
-        }
-
-        const ext = path.extname(file[0].originalFilename).toLowerCase();
-        const uuid = uuidv4();
-        const fileName = `${title[0].replace(/\s+/g, "-")}-${uuid.slice(
-          0,
-          5
-        )}${ext}`;
-
-        // Buat slug dan insert ke DB
-        const slug = `${title[0]
-          .toLowerCase()
-          .replace(/\s+/g, "-")}-${uuid.slice(0, 5)}`;
-
-        console.log("97");
-
-        let existingCategory = await Category.findOne({
-          where: { category: category[0].trim().toLowerCase() },
-        });
-
-        console.log("103");
-        // console.log(existingCategory, "exisssss");
-
-        if (!existingCategory) {
-          existingCategory = await Category.create({
-            id: uuidv4(),
-            category: category[0].trim().toLowerCase(),
-          });
-        }
-
-        const article = await Article.create({
-          id: uuid,
-          title: title[0],
-          slug: slug,
-          thumbnail_url: fileName,
-          content_html: content_html[0],
-          province: province[0],
-          city: city[0],
-          user_id,
-          active: active[0],
-        });
-
-        await ArticleCategoryMap.create({
-          id: uuidv4(),
-          article_id: article.id,
-          article_category_id: existingCategory.id,
-        });
-
-        return resolve(
-          h
-            .response({
-              statusCode: 201,
-              status: "success",
-              message: "Article created successfully",
-              data: article,
-            })
-            .code(201)
-        );
-      } catch (error) {
-        console.error(error);
-        return resolve(
-          h
-            .response({
-              statusCode: 500,
-              status: "error",
-              message: "Internal Server Error",
-            })
-            .code(500)
-        );
-      }
+    // 3. Handle Kategori (cari atau buat baru)
+    const categoryNameTrimmed = category.trim().toLowerCase();
+    let existingCategory = await Category.findOne({
+      where: { category: categoryNameTrimmed }, // Asumsi kolom nama di tabel Category adalah 'category'
+      transaction: t,
     });
-  });
+
+    if (!existingCategory) {
+      existingCategory = await Category.create({
+        // id: uuidv4(), // Model Category Anda mungkin menangani ID secara otomatis
+        category: categoryNameTrimmed,
+      }, { transaction: t });
+    }
+
+    // 4. Persiapkan data untuk Artikel
+    const articleUuid = uuidv4();
+    const slug = `${title.toLowerCase().replace(/\s+/g, "-")}-${articleUuid.slice(0, 5)}`;
+    const thumbnailUrl = images[0]; // Ambil gambar pertama sebagai thumbnail
+
+    // 5. Buat Artikel
+    const article = await Article.create({
+      id: articleUuid,
+      title,
+      slug,
+      thumbnail_url: thumbnailUrl,
+      content_html,
+      province,
+      city,
+      user_id,
+      active,
+    }, { transaction: t });
+
+    // 6. Buat entri di ArticleCategoryMap
+    await ArticleCategoryMap.create({
+      // id: uuidv4(), // Model ArticleCategoryMap Anda mungkin menangani ID
+      article_id: article.id,
+      article_category_id: existingCategory.id,
+    }, { transaction: t });
+
+    // 7. Simpan sisa gambar ke tabel ArticleImage (jika ada)
+    if (images.length > 1) {
+      const remainingImages = images.slice(1); // Ambil semua gambar setelah yang pertama
+      for (const imageUrl of remainingImages) {
+        await ArticleImages.create({
+          id: uuidv4(), // Model ArticleImage Anda mungkin menangani ID
+          image_url: imageUrl,
+          article_id: article.id,
+        }, { transaction: t });
+      }
+    }
+
+    // Jika semua berhasil, commit transaksi
+    await t.commit();
+
+    return h.response({
+      statusCode: 201,
+      status: "success",
+      message: "Article created successfully",
+      data: {
+        id: article.id,
+        slug: article.slug,
+        title: article.title,
+        // Sertakan data lain yang relevan jika perlu
+      },
+    }).code(201);
+
+  } catch (transactionError) {
+    // Jika terjadi error, rollback transaksi
+    await t.rollback();
+    console.error("Error creating article:", transactionError);
+    return h.response({
+      statusCode: 500,
+      status: "error",
+      message: "Internal Server Error",
+      // detail: transactionError.message // Opsional: tambahkan detail error untuk debugging
+    }).code(500);
+  }
 };
 
 const getCalculatedArticleAttributes = (userId) => {
@@ -214,7 +158,7 @@ const getCalculatedArticleAttributes = (userId) => {
 
 const getAllArticleHandler = async (request, h) => {
   try {
-    const { title, category: categoryQuery } = request.query;
+    const { title, category: categoryQuery, province, city } = request.query;
     const userId = request.auth.isAuthenticated
       ? request.auth.credentials.id
       : null;
@@ -224,6 +168,12 @@ const getAllArticleHandler = async (request, h) => {
     };
     if (title) {
       whereClause.title = { [Op.iLike]: `%${title}%` };
+    }
+    if (province) {
+      whereClause.province = { [Op.iLike]: `%${province}%` };
+    }
+    if (city) {
+      whereClause.city = { [Op.iLike]: `%${city}%` };
     }
 
     const calculatedAttributes = getCalculatedArticleAttributes(userId);
@@ -237,6 +187,7 @@ const getAllArticleHandler = async (request, h) => {
           model: ArticleCategoryMap,
           as: "category_maps",
           required: !!categoryQuery,
+          attributes: ["id", "article_id", "article_category_id"],
           include: [
             {
               model: Category,
@@ -249,6 +200,12 @@ const getAllArticleHandler = async (request, h) => {
             },
           ],
         },
+        {
+          model: ArticleImages, // Tambahkan include untuk ArticleImage
+          as: 'images', // Ganti 'articleImages' dengan alias yang Anda gunakan di definisi relasi
+          attributes: ['id', 'image_url'], // Pilih atribut yang ingin ditampilkan
+          required: false, // Artikel mungkin tidak memiliki gambar tambahan
+        }
       ],
       attributes: {
         include: calculatedAttributes,
@@ -305,6 +262,12 @@ const getArticleBySlug = async (request, h) => {
           model: User,
           as: 'author', 
           attributes: ['id', 'name', 'email'],
+        },
+        {
+          model: ArticleImages, // Tambahkan include untuk ArticleImage
+          as: 'images', // Ganti 'articleImages' dengan alias yang Anda gunakan di definisi relasi
+          attributes: ['id', 'image_url'], // Pilih atribut yang ingin ditampilkan
+          required: false, // Artikel mungkin tidak memiliki gambar tambahan
         }
       ],
       attributes: {
