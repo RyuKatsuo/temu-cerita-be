@@ -1,6 +1,7 @@
 const {
   registerHandler,
   loginHandler,
+  googleLoginHandler,
 } = require("../controllers/authController");
 const Joi = require("joi");
 
@@ -39,6 +40,25 @@ const authRoutes = [
       },
     },
     handler: loginHandler,
+  },
+  {
+    method: "POST",
+    path: "/login/google",
+    options: {
+      auth: false,
+      validate: {
+        payload: Joi.object({
+          email: Joi.string().email().required(),
+          google_id: Joi.string().required(),
+          name: Joi.string().required(),
+          profile_picture: Joi.string().required(),
+        }),
+        failAction: (request, h, err) => {
+          throw err;
+        },
+      },
+    },
+    handler: googleLoginHandler,
   },
 ];
 

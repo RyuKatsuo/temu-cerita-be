@@ -31,6 +31,13 @@ const User = sequelize.define(
         admin: {
             type: DataTypes.BOOLEAN,
             defaultValue: false
+        },
+        google_id: {
+            type: DataTypes.STRING,
+            unique: true
+        },
+        profile_picture: {
+            type: DataTypes.STRING,
         }
     }, 
     {
